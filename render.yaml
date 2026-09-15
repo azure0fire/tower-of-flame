@@ -12,7 +12,7 @@ services:
 
   - type: web
     runtime: static
-    name: tower-of-flame-frontend
+    name: tower-of-flame
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
