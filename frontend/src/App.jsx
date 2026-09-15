@@ -3,7 +3,7 @@ import { api } from "./api";
 import { watchAuth, loginWithGoogle, logout, getUserProfile, createUserProfile, updateBestFloor } from "./firebase";
 
 const CHARACTERS = [
-  { key: 0, name: "모험가", desc: "모든 스탯이 고른 올라운더", stats: "공4 방4 체9 민4 행4 지5" },
+  { key: 0, name: "모험가", desc: "모든 스탯이 고른 올라운더", stats: "공5 방5 체5 민5 행5 지5" },
   { key: 1, name: "화염 기사", desc: "체력과 방어에 투자한 탱커", stats: "공6 방9 체9 민2 행2 지2" },
   { key: 2, name: "비술사", desc: "마력을 앞세운 폭딜형", stats: "공4 방4 체9 민4 행4 지5" },
 ];
@@ -17,6 +17,7 @@ export default function App() {
   const [stage, setStage] = useState("login"); // login | select | main
   const [tab, setTab] = useState("전투");
   const [selectedChar, setSelectedChar] = useState(null);
+  const [nickname, setNickname] = useState("");
   const [session, setSession] = useState(null); // { sessionId, charName }
   const [battle, setBattle] = useState(null); // { floor, player, monster, monsterName, log, outcome }
   const [busy, setBusy] = useState(false);
@@ -39,6 +40,7 @@ export default function App() {
           setSession(res);
           setStage("main");
         } else {
+          setNickname(u.displayName || "");
           setStage("select");
         }
       } catch (e) {
@@ -70,11 +72,16 @@ export default function App() {
   }
 
   async function handlePickCharacter(charKey) {
+    const finalName = nickname.trim();
+    if (!finalName) {
+      setError("닉네임을 입력해주세요.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const newProfile = await createUserProfile(user.uid, {
-        displayName: user.displayName || "모험가",
+        displayName: finalName,
         charKey,
       });
       setProfile(newProfile);
@@ -164,6 +171,16 @@ export default function App() {
           <h2 className="display" style={{ color: "var(--gold)", fontSize: 26 }}>
             캐릭터 선택
           </h2>
+          <div style={{ marginTop: 16 }}>
+            <label style={{ fontSize: 13, color: "var(--text-dim)" }}>닉네임</label>
+            <input
+              className="nickname-input"
+              value={nickname}
+              maxLength={12}
+              placeholder="탑에서 쓸 이름을 입력하세요"
+              onChange={(e) => setNickname(e.target.value)}
+            />
+          </div>
           <div className="char-grid">
             {CHARACTERS.map((c) => (
               <div
@@ -182,7 +199,7 @@ export default function App() {
           <div style={{ marginTop: 24, textAlign: "center" }}>
             <button
               className="btn"
-              disabled={selectedChar === null || busy}
+              disabled={selectedChar === null || !nickname.trim() || busy}
               onClick={() => handlePickCharacter(selectedChar)}
             >
               {busy ? "생성 중..." : "이 캐릭터로 시작"}
