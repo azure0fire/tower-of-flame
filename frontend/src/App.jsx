@@ -123,7 +123,7 @@ export default function App() {
   }
 
   async function afterFloorChange(res) {
-    console.log("[불꽃의 탑] 서버 응답:", res);
+    console.log("[불꽃의 탑] 서버 응답:", JSON.stringify(res, null, 2));
     const nextBattle = { ...res, outcome: res.outcome || "ongoing" };
     setBattle(nextBattle);
     if (profile && res.floor > profile.bestFloor) {
