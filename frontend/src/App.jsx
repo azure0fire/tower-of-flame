@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
-import { watchAuth, loginWithGoogle, logout, getUserProfile, createUserProfile, updateBestFloor, deleteAccount } from "./firebase";
+import { watchAuth, loginWithGoogle, logout, getUserProfile, createUserProfile, updateBestFloor, deleteAccount, syncProgress } from "./firebase";
 
 const CHARACTERS = [
   { key: 0, name: "모험가", desc: "모든 스탯이 고른 올라운더", stats: "공5 방5 체5 민5 행5 지5" },
@@ -18,7 +18,8 @@ export default function App() {
   const [tab, setTab] = useState("전투");
   const [selectedChar, setSelectedChar] = useState(null);
   const [nickname, setNickname] = useState("");
-  const [session, setSession] = useState(null); // { sessionId, charName }
+  const [session, setSession] = useState(null); // { sessionId, charName, skills }
+  const [progress, setProgress] = useState(null); // { level, xp, xpToNext, unspentPoints, allocated }
   const [battle, setBattle] = useState(null); // { floor, player, monster, monsterName, log, outcome }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -42,8 +43,15 @@ export default function App() {
         const existing = await getUserProfile(u.uid);
         if (existing) {
           setProfile(existing);
-          const res = await api.createSession(existing.charKey, existing.displayName);
+          const res = await api.createSession(existing.charKey, existing.displayName, {
+            level: existing.level,
+            xp: existing.xp,
+            xpToNext: existing.xpToNext,
+            unspentPoints: existing.unspentPoints,
+            allocated: existing.allocated,
+          });
           setSession(res);
+          setProgress({ level: res.level, xp: res.xp, xpToNext: res.xpToNext, unspentPoints: res.unspentPoints, allocated: res.allocated });
           setStage("main");
         } else {
           setNickname(u.displayName || "");
@@ -73,6 +81,7 @@ export default function App() {
     await logout();
     setProfile(null);
     setSession(null);
+    setProgress(null);
     setBattle(null);
     setStage("login");
   }
@@ -85,6 +94,7 @@ export default function App() {
       await deleteAccount(user.uid);
       setProfile(null);
       setSession(null);
+      setProgress(null);
       setBattle(null);
       setStage("login");
     } catch (e) {
@@ -112,8 +122,15 @@ export default function App() {
         charKey,
       });
       setProfile(newProfile);
-      const res = await api.createSession(charKey, newProfile.displayName);
+      const res = await api.createSession(charKey, newProfile.displayName, {
+        level: newProfile.level,
+        xp: newProfile.xp,
+        xpToNext: newProfile.xpToNext,
+        unspentPoints: newProfile.unspentPoints,
+        allocated: newProfile.allocated,
+      });
       setSession(res);
+      setProgress({ level: res.level, xp: res.xp, xpToNext: res.xpToNext, unspentPoints: res.unspentPoints, allocated: res.allocated });
       setStage("main");
     } catch (e) {
       setError(e.message);
@@ -123,13 +140,40 @@ export default function App() {
   }
 
   async function afterFloorChange(res) {
-    console.log("[불꽃의 탑] 서버 응답:", JSON.stringify(res, null, 2));
     const nextBattle = { ...res, outcome: res.outcome || "ongoing" };
     setBattle(nextBattle);
+    const newProgress = { level: res.level, xp: res.xp, xpToNext: res.xpToNext, unspentPoints: res.unspentPoints, allocated: res.allocated };
+    const progressChanged = !progress || newProgress.level !== progress.level || newProgress.xp !== progress.xp;
+    setProgress(newProgress);
     if (profile && res.floor > profile.bestFloor) {
       const newBest = await updateBestFloor(user.uid, res.floor, profile.bestFloor);
-      setProfile({ ...profile, bestFloor: newBest });
+      setProfile((p) => ({ ...p, bestFloor: newBest }));
     }
+    if (progressChanged) {
+      await syncProgress(user.uid, newProgress);
+      setProfile((p) => (p ? { ...p, ...newProgress } : p));
+    }
+  }
+
+  async function handleAllocate(stat, delta) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.allocate(session.sessionId, stat, delta);
+      const newProgress = { level: res.level, xp: res.xp, xpToNext: res.xpToNext, unspentPoints: res.unspentPoints, allocated: res.allocated };
+      setProgress(newProgress);
+      setBattle((b) => (b ? { ...b, player: res.player } : b));
+      await syncProgress(user.uid, newProgress);
+      setProfile((p) => (p ? { ...p, ...newProgress } : p));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleLeaveTower() {
+    setBattle(null);
   }
 
   async function handleEnterTower() {
@@ -245,7 +289,9 @@ export default function App() {
       <div className="topbar">
         <h1 className="display">불꽃의 탑</h1>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 13, color: "var(--text-dim)" }}>{session?.charName}</div>
+          <div style={{ fontSize: 13, color: "var(--text-dim)" }}>
+            {session?.charName} · Lv.{progress?.level ?? 1}
+          </div>
           <div style={{ fontSize: 11, color: "var(--gold)" }}>최고 {profile?.bestFloor ?? 0}층</div>
         </div>
       </div>
@@ -260,15 +306,18 @@ export default function App() {
         {tab === "전투" ? (
           <BattleTab
             battle={battle}
+            progress={progress}
+            skills={session?.skills}
             busy={busy}
             error={error}
             onEnter={handleEnterTower}
             onAction={handleAction}
             onNextFloor={handleNextFloor}
             onRetry={handleEnterTower}
+            onLeave={handleLeaveTower}
           />
         ) : tab === "가방" ? (
-          <StatsTab session={session} battle={battle} />
+          <StatsTab session={session} battle={battle} progress={progress} busy={busy} onAllocate={handleAllocate} />
         ) : tab === "설정" ? (
           <div className="placeholder">
             <p>{user?.displayName} 님으로 로그인됨</p>
@@ -292,9 +341,18 @@ export default function App() {
   );
 }
 
-function StatsTab({ session, battle }) {
+const STAT_ROWS = [
+  ["atk", "공격력"],
+  ["def", "방어력"],
+  ["hp", "체력"],
+  ["agi", "민첩"],
+  ["luk", "행운"],
+  ["int", "지능"],
+];
+
+function StatsTab({ session, battle, progress, busy, onAllocate }) {
   const fighter = battle?.player || session?.player;
-  if (!fighter) {
+  if (!fighter || !progress) {
     return (
       <div className="placeholder">
         <p>캐릭터 정보를 불러오는 중입니다.</p>
@@ -302,29 +360,39 @@ function StatsTab({ session, battle }) {
     );
   }
 
-  const rows = [
-    ["공격력", fighter.stats.atk],
-    ["방어력", fighter.stats.def],
-    ["체력", fighter.stats.hp],
-    ["민첩", fighter.stats.agi],
-    ["행운", fighter.stats.luk],
-    ["지능", fighter.stats.int],
-  ];
-
   return (
     <div>
-      <h2 className="display" style={{ color: "var(--gold)", fontSize: 22, marginBottom: 16 }}>
-        {fighter.name}
+      <h2 className="display" style={{ color: "var(--gold)", fontSize: 22, marginBottom: 4 }}>
+        {fighter.name} <span style={{ fontSize: 14, color: "var(--text-dim)" }}>Lv.{progress.level}</span>
       </h2>
+      <div style={{ marginBottom: 16 }}>
+        <ExpBar xp={progress.xp} xpToNext={progress.xpToNext} />
+      </div>
       <div className="fighter">
         <StatBar label="HP" value={fighter.hp} max={fighter.maxHp} kind="hp" />
         <StatBar label="MP" value={fighter.mp} max={fighter.maxMp} kind="mp" />
       </div>
       <div className="fighter">
-        {rows.map(([label, value]) => (
-          <div className="row" key={label}>
-            <span style={{ color: "var(--text-dim)" }}>{label}</span>
-            <span style={{ color: "var(--gold)" }}>{value}</span>
+        <div className="row" style={{ marginBottom: 10 }}>
+          <span style={{ color: "var(--text-dim)" }}>남은 스탯</span>
+          <span style={{ color: progress.unspentPoints > 0 ? "var(--gold)" : "var(--text-dim)" }}>{progress.unspentPoints}</span>
+        </div>
+        {STAT_ROWS.map(([key, label]) => (
+          <div className="stat-row" key={key}>
+            <span className="stat-row-label">{label}</span>
+            <span className="stat-row-value">{fighter.stats[key]}</span>
+            <div className="stat-row-btns">
+              <button
+                className="stat-btn"
+                disabled={busy || (progress.allocated[key] || 0) <= 0}
+                onClick={() => onAllocate(key, -1)}
+              >
+                −
+              </button>
+              <button className="stat-btn" disabled={busy || progress.unspentPoints <= 0} onClick={() => onAllocate(key, 1)}>
+                +
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -332,6 +400,23 @@ function StatsTab({ session, battle }) {
         인벤토리(장비/재료)는 아직 준비 중입니다.
       </p>
     </div>
+  );
+}
+
+function ExpBar({ xp, xpToNext }) {
+  const pct = xpToNext > 0 ? Math.max(0, Math.min(100, (xp / xpToNext) * 100)) : 0;
+  return (
+    <>
+      <div className="bar">
+        <div className="bar-fill xp" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="bar-label">
+        <span>EXP</span>
+        <span>
+          {xp} / {xpToNext}
+        </span>
+      </div>
+    </>
   );
 }
 
@@ -352,7 +437,63 @@ function StatBar({ label, value, max, kind }) {
   );
 }
 
-function BattleTab({ battle, busy, error, onEnter, onAction, onNextFloor, onRetry }) {
+const ZONE_COLORS = {
+  1: "#7a9b4e",
+  2: "#b5533a",
+  3: "#c97a2e",
+  4: "#6a4fa0",
+  5: "#8fb6c9",
+};
+
+function MonsterSprite({ zone, hit }) {
+  const color = ZONE_COLORS[zone] || "#8c5a44";
+  return (
+    <div className={`monster-sprite ${hit ? "hit" : ""}`}>
+      <svg viewBox="0 0 100 100" width="96" height="96">
+        <ellipse cx="50" cy="58" rx="34" ry="28" fill={color} />
+        <polygon points="26,34 34,14 40,36" fill={color} />
+        <polygon points="74,34 66,14 60,36" fill={color} />
+        <circle cx="38" cy="54" r="6" fill="#14100d" />
+        <circle cx="62" cy="54" r="6" fill="#14100d" />
+        <circle cx="38" cy="52" r="2" fill="#fff" />
+        <circle cx="62" cy="52" r="2" fill="#fff" />
+        <path d="M36 72 Q50 82 64 72" stroke="#14100d" strokeWidth="3" fill="none" strokeLinecap="round" />
+      </svg>
+      {hit && <div className="impact-burst">✦</div>}
+    </div>
+  );
+}
+
+function usePrevious(value) {
+  const ref = React.useRef(value);
+  useEffect(() => {
+    ref.current = value;
+  });
+  return ref.current;
+}
+
+function BattleTab({ battle, progress, skills, busy, error, onEnter, onAction, onNextFloor, onRetry, onLeave }) {
+  const prevMonsterHp = usePrevious(battle?.monster?.hp);
+  const prevPlayerHp = usePrevious(battle?.player?.hp);
+  const [monsterHit, setMonsterHit] = useState(false);
+  const [playerHit, setPlayerHit] = useState(false);
+
+  useEffect(() => {
+    if (battle?.monster && prevMonsterHp !== undefined && battle.monster.hp < prevMonsterHp) {
+      setMonsterHit(true);
+      const t = setTimeout(() => setMonsterHit(false), 400);
+      return () => clearTimeout(t);
+    }
+  }, [battle?.monster?.hp]);
+
+  useEffect(() => {
+    if (battle?.player && prevPlayerHp !== undefined && battle.player.hp < prevPlayerHp) {
+      setPlayerHit(true);
+      const t = setTimeout(() => setPlayerHit(false), 400);
+      return () => clearTimeout(t);
+    }
+  }, [battle?.player?.hp]);
+
   if (!battle) {
     return (
       <div className="hero">
@@ -367,7 +508,7 @@ function BattleTab({ battle, busy, error, onEnter, onAction, onNextFloor, onRetr
     );
   }
 
-  const { floor, player, monster, monsterName, log, outcome } = battle;
+  const { floor, player, monster, monsterName, monsterZone, log, outcome } = battle;
 
   if (!player || !monster) {
     return (
@@ -389,9 +530,14 @@ function BattleTab({ battle, busy, error, onEnter, onAction, onNextFloor, onRetr
         <p style={{ color: "var(--text-dim)" }}>
           {floor}층의 {monsterName}을(를) 물리쳤습니다.
         </p>
-        <button className="btn" style={{ marginTop: 20 }} disabled={busy} onClick={onNextFloor}>
-          다음 층으로
-        </button>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 20 }}>
+          <button className="btn" disabled={busy} onClick={onNextFloor}>
+            다음 층으로
+          </button>
+          <button className="btn secondary" disabled={busy} onClick={onLeave}>
+            탑에서 나가기
+          </button>
+        </div>
       </div>
     );
   }
@@ -416,19 +562,26 @@ function BattleTab({ battle, busy, error, onEnter, onAction, onNextFloor, onRetr
         <strong>{floor}층</strong> · {monsterName}
       </div>
 
-      <div className="fighter">
-        <div className="row">
-          <span className="name">{player.name}</span>
-        </div>
-        <StatBar label="HP" value={player.hp} max={player.maxHp} kind="hp" />
-        <StatBar label="MP" value={player.mp} max={player.maxMp} kind="mp" />
+      <div className="monster-stage">
+        <MonsterSprite zone={monsterZone} hit={monsterHit} />
       </div>
 
-      <div className="fighter">
+      <div className={`fighter ${monsterHit ? "shake" : ""}`}>
         <div className="row">
           <span className="name">{monster.name}</span>
         </div>
         <StatBar label="HP" value={monster.hp} max={monster.maxHp} kind="hp" />
+      </div>
+
+      <div className={`fighter ${playerHit ? "flash-hurt" : ""}`}>
+        <div className="row">
+          <span className="name">
+            {player.name} {progress && <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Lv.{progress.level}</span>}
+          </span>
+        </div>
+        <StatBar label="HP" value={player.hp} max={player.maxHp} kind="hp" />
+        <StatBar label="MP" value={player.mp} max={player.maxMp} kind="mp" />
+        {progress && <ExpBar xp={progress.xp} xpToNext={progress.xpToNext} />}
       </div>
 
       <div className="log">
@@ -444,11 +597,29 @@ function BattleTab({ battle, busy, error, onEnter, onAction, onNextFloor, onRetr
         <button className="btn secondary" disabled={busy} onClick={() => onAction("defend")}>
           방어
         </button>
-        <button className="btn secondary" disabled={busy} onClick={() => onAction("skill1")}>
-          스킬 1
+        <button
+          className="btn secondary skill-btn"
+          disabled={busy}
+          title={skills?.[0]?.desc}
+          onClick={() => onAction("skill1")}
+        >
+          <span>{skills?.[0]?.name || "스킬 1"}</span>
+          {skills?.[0]?.desc && <small>{skills[0].desc}</small>}
         </button>
-        <button className="btn secondary" disabled={busy} onClick={() => onAction("skill2")}>
-          스킬 2
+        <button
+          className="btn secondary skill-btn"
+          disabled={busy}
+          title={skills?.[1]?.desc}
+          onClick={() => onAction("skill2")}
+        >
+          <span>{skills?.[1]?.name || "스킬 2"}</span>
+          {skills?.[1]?.desc && <small>{skills[1].desc}</small>}
+        </button>
+      </div>
+
+      <div style={{ textAlign: "center", marginTop: 14 }}>
+        <button className="btn secondary" disabled={busy} onClick={onLeave}>
+          탑에서 나가기
         </button>
       </div>
 
