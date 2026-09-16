@@ -30,16 +30,37 @@ export function logout() {
   return signOut(auth);
 }
 
-// users/{uid} 문서: { displayName, charKey, bestFloor, createdAt }
+// users/{uid} 문서: { displayName, charKey, bestFloor, level, xp, xpToNext, unspentPoints, allocated, createdAt }
 export async function getUserProfile(uid) {
   const snap = await getDoc(doc(db, "users", uid));
   return snap.exists() ? snap.data() : null;
 }
 
 export async function createUserProfile(uid, { displayName, charKey }) {
-  const profile = { displayName, charKey, bestFloor: 0, createdAt: Date.now() };
+  const profile = {
+    displayName,
+    charKey,
+    bestFloor: 0,
+    level: 1,
+    xp: 0,
+    xpToNext: 20,
+    unspentPoints: 0,
+    allocated: { atk: 0, def: 0, hp: 0, agi: 0, luk: 0, int: 0 },
+    createdAt: Date.now(),
+  };
   await setDoc(doc(db, "users", uid), profile);
   return profile;
+}
+
+// 전투 진행(레벨/경험치/분배 스탯)을 Firestore에 동기화
+export async function syncProgress(uid, progress) {
+  await updateDoc(doc(db, "users", uid), {
+    level: progress.level,
+    xp: progress.xp,
+    xpToNext: progress.xpToNext,
+    unspentPoints: progress.unspentPoints,
+    allocated: progress.allocated,
+  });
 }
 
 // 새로 도달한 층수가 기존 최고 기록보다 높을 때만 갱신
