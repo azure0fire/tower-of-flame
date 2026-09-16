@@ -26,8 +26,9 @@ async function post(path, body) {
 }
 
 export const api = {
-  createSession: (charKey, playerName) => post("/session", { charKey, playerName }),
+  createSession: (charKey, playerName, progress) => post("/session", { charKey, playerName, progress }),
   enterTower: (sessionId) => post(`/session/${sessionId}/enter-tower`),
   act: (sessionId, action) => post(`/session/${sessionId}/action`, { action }),
   nextFloor: (sessionId) => post(`/session/${sessionId}/next-floor`),
+  allocate: (sessionId, stat, delta) => post(`/session/${sessionId}/allocate`, { stat, delta }),
 };
