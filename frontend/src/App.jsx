@@ -23,15 +23,21 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
+  const initializedUidRef = React.useRef(null);
+
   // 로그인 상태 감시. 이미 캐릭터를 만든 유저면 바로 메인으로 보냄.
   useEffect(() => {
     const unsub = watchAuth(async (u) => {
       setAuthChecked(true);
       setUser(u);
       if (!u) {
+        initializedUidRef.current = null;
         setStage("login");
         return;
       }
+      // 토큰 갱신 등으로 콜백이 다시 불려도 같은 유저면 세션을 새로 만들지 않음
+      if (initializedUidRef.current === u.uid) return;
+      initializedUidRef.current = u.uid;
       try {
         const existing = await getUserProfile(u.uid);
         if (existing) {
@@ -117,6 +123,7 @@ export default function App() {
   }
 
   async function afterFloorChange(res) {
+    console.log("[불꽃의 탑] 서버 응답:", res);
     const nextBattle = { ...res, outcome: res.outcome || "ongoing" };
     setBattle(nextBattle);
     if (profile && res.floor > profile.bestFloor) {
