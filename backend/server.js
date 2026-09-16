@@ -189,6 +189,7 @@ app.post("/api/session/:id/action", (req, res) => {
 app.post("/api/session/:id/next-floor", (req, res) => {
   const session = sessions.get(req.params.id);
   if (!session) return res.status(404).json({ error: "session not found" });
+  if (!session.monster) return res.status(400).json({ error: "no active battle, call enter-tower first" });
   if (session.monster.hp > 0) return res.status(400).json({ error: "current battle not finished" });
 
   session.floor += 1;
@@ -211,4 +212,11 @@ function sessionState(session) {
 }
 
 const PORT = process.env.PORT || 3001;
+
+// 어떤 에러가 나든 HTML이 아니라 항상 JSON으로 응답 (프론트에서 파싱 실패 방지)
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ error: "서버 내부 오류가 발생했습니다." });
+});
+
 app.listen(PORT, () => console.log(`불꽃의 탑 백엔드 서버 실행 중: http://localhost:${PORT}`));
