@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
-import { watchAuth, loginWithGoogle, logout, getUserProfile, createUserProfile, updateBestFloor } from "./firebase";
+import { watchAuth, loginWithGoogle, logout, getUserProfile, createUserProfile, updateBestFloor, deleteAccount } from "./firebase";
 
 const CHARACTERS = [
   { key: 0, name: "모험가", desc: "모든 스탯이 고른 올라운더", stats: "공5 방5 체5 민5 행5 지5" },
@@ -69,6 +69,27 @@ export default function App() {
     setSession(null);
     setBattle(null);
     setStage("login");
+  }
+
+  async function handleDeleteAccount() {
+    if (!window.confirm("정말 계정을 삭제하시겠습니까? 캐릭터와 진행 기록이 모두 사라지고 되돌릴 수 없습니다.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteAccount(user.uid);
+      setProfile(null);
+      setSession(null);
+      setBattle(null);
+      setStage("login");
+    } catch (e) {
+      if (e.code === "auth/requires-recent-login") {
+        setError("보안을 위해 최근 로그인이 필요합니다. 로그아웃 후 다시 로그인하고 바로 삭제해주세요.");
+      } else {
+        setError(e.message);
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handlePickCharacter(charKey) {
@@ -239,14 +260,20 @@ export default function App() {
             onNextFloor={handleNextFloor}
             onRetry={handleEnterTower}
           />
+        ) : tab === "가방" ? (
+          <StatsTab session={session} battle={battle} />
         ) : tab === "설정" ? (
           <div className="placeholder">
             <p>{user?.displayName} 님으로 로그인됨</p>
-            <div style={{ marginTop: 16 }}>
+            <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
               <button className="btn secondary" onClick={handleLogout}>
                 로그아웃
               </button>
+              <button className="btn" style={{ background: "var(--danger)", borderColor: "var(--danger)", color: "#fff" }} disabled={busy} onClick={handleDeleteAccount}>
+                계정 삭제
+              </button>
             </div>
+            {error && <p style={{ color: "var(--danger)", marginTop: 12 }}>{error}</p>}
           </div>
         ) : (
           <div className="placeholder">
@@ -254,6 +281,49 @@ export default function App() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function StatsTab({ session, battle }) {
+  const fighter = battle?.player || session?.player;
+  if (!fighter) {
+    return (
+      <div className="placeholder">
+        <p>캐릭터 정보를 불러오는 중입니다.</p>
+      </div>
+    );
+  }
+
+  const rows = [
+    ["공격력", fighter.stats.atk],
+    ["방어력", fighter.stats.def],
+    ["체력", fighter.stats.hp],
+    ["민첩", fighter.stats.agi],
+    ["행운", fighter.stats.luk],
+    ["지능", fighter.stats.int],
+  ];
+
+  return (
+    <div>
+      <h2 className="display" style={{ color: "var(--gold)", fontSize: 22, marginBottom: 16 }}>
+        {fighter.name}
+      </h2>
+      <div className="fighter">
+        <StatBar label="HP" value={fighter.hp} max={fighter.maxHp} kind="hp" />
+        <StatBar label="MP" value={fighter.mp} max={fighter.maxMp} kind="mp" />
+      </div>
+      <div className="fighter">
+        {rows.map(([label, value]) => (
+          <div className="row" key={label}>
+            <span style={{ color: "var(--text-dim)" }}>{label}</span>
+            <span style={{ color: "var(--gold)" }}>{value}</span>
+          </div>
+        ))}
+      </div>
+      <p style={{ color: "var(--text-dim)", fontSize: 13, textAlign: "center", marginTop: 20 }}>
+        인벤토리(장비/재료)는 아직 준비 중입니다.
+      </p>
     </div>
   );
 }
@@ -291,6 +361,19 @@ function BattleTab({ battle, busy, error, onEnter, onAction, onNextFloor, onRetr
   }
 
   const { floor, player, monster, monsterName, log, outcome } = battle;
+
+  if (!player || !monster) {
+    return (
+      <div className="hero">
+        <p style={{ color: "var(--danger)" }}>전투 정보를 불러오지 못했습니다. 다시 시도해주세요.</p>
+        <div style={{ marginTop: 20 }}>
+          <button className="btn" disabled={busy} onClick={onEnter}>
+            다시 시도
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (outcome === "victory") {
     return (
