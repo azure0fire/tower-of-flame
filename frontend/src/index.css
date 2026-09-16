@@ -258,6 +258,10 @@ button {
   background: var(--mp);
 }
 
+.bar-fill.xp {
+  background: var(--gold);
+}
+
 .bar-label {
   display: flex;
   justify-content: space-between;
@@ -307,4 +311,131 @@ button {
   text-align: center;
   color: var(--text-dim);
   padding: 60px 20px;
+}
+
+/* ---------- Monster sprite & battle effects ---------- */
+.monster-stage {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 18px;
+}
+
+.monster-sprite {
+  position: relative;
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.5));
+  transition: transform 0.1s;
+}
+
+.monster-sprite.hit {
+  animation: monster-shake 0.4s ease;
+}
+
+@keyframes monster-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px) scale(0.96); }
+  40% { transform: translateX(7px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(3px); }
+}
+
+.impact-burst {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 40px;
+  color: var(--ember-hot);
+  text-shadow: 0 0 12px var(--ember);
+  animation: impact-pop 0.4s ease forwards;
+  pointer-events: none;
+}
+
+@keyframes impact-pop {
+  0% { opacity: 0; transform: translateX(-50%) scale(0.4); }
+  40% { opacity: 1; transform: translateX(-50%) scale(1.3); }
+  100% { opacity: 0; transform: translateX(-50%) scale(1.6); }
+}
+
+.fighter.shake {
+  animation: panel-shake 0.4s ease;
+}
+
+@keyframes panel-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+.fighter.flash-hurt {
+  animation: flash-hurt 0.4s ease;
+  border-color: var(--danger);
+}
+
+@keyframes flash-hurt {
+  0%, 100% { background: var(--panel); }
+  30% { background: #3a1512; }
+}
+
+/* ---------- Skill buttons with description ---------- */
+.skill-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  line-height: 1.3;
+}
+
+.skill-btn small {
+  font-weight: 400;
+  font-size: 10px;
+  color: rgba(239, 230, 216, 0.7);
+  white-space: normal;
+}
+
+/* ---------- Stat allocation rows (가방) ---------- */
+.stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #2e2018;
+}
+
+.stat-row:last-child {
+  border-bottom: none;
+}
+
+.stat-row-label {
+  color: var(--text-dim);
+  flex: 1;
+}
+
+.stat-row-value {
+  color: var(--gold);
+  font-weight: 700;
+  width: 32px;
+  text-align: right;
+}
+
+.stat-row-btns {
+  display: flex;
+  gap: 6px;
+  margin-left: 14px;
+}
+
+.stat-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid var(--copper);
+  background: var(--panel-raised);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.stat-btn:disabled {
+  opacity: 0.3;
+  color: var(--text-dim);
+  cursor: not-allowed;
 }
