@@ -8,24 +8,24 @@ const CHARACTERS = {
     name: "모험가",
     baseStats: { atk: 5, def: 5, hp: 5, agi: 5, luk: 5, int: 5 },
     skills: [
-      { id: "s1", name: "강타", mp: 1, effect: (self) => ({ atkMult: 1.3 }) },
-      { id: "s2", name: "재정비", mp: 2, effect: (self) => ({ defMult: 1.2, healPct: 0.1 }) },
+      { id: "s1", name: "강타", mp: 1, desc: "공격력 30% 증가한 강공격", effect: (self) => ({ atkMult: 1.3 }) },
+      { id: "s2", name: "재정비", mp: 2, desc: "방어력 20% 상승 + 체력 소량 회복", effect: (self) => ({ defMult: 1.2, healPct: 0.1 }) },
     ],
   },
   1: {
     name: "화염 기사",
     baseStats: { atk: 6, def: 9, hp: 9, agi: 2, luk: 2, int: 2 },
     skills: [
-      { id: "s1", name: "잿더미 방벽", mp: 0, effect: (self) => ({ defMult: 1.5 }) },
-      { id: "s2", name: "재의 반격", mp: 1, effect: (self) => ({ defMult: 1.2, counterPct: 0.4 }) },
+      { id: "s1", name: "잿더미 방벽", mp: 0, desc: "방어력 50% 상승 (마력 소모 없음)", effect: (self) => ({ defMult: 1.5 }) },
+      { id: "s2", name: "재의 반격", mp: 1, desc: "방어력 20% 상승 + 받은 피해의 40%를 반격", effect: (self) => ({ defMult: 1.2, counterPct: 0.4 }) },
     ],
   },
   2: {
     name: "비술사",
     baseStats: { atk: 4, def: 4, hp: 9, agi: 4, luk: 4, int: 5 },
     skills: [
-      { id: "s1", name: "화염 폭발", mp: 3, effect: (self) => ({ atkMult: 1.0, defPierce: 0.5, bonusCrit: 0.2, noDodge: true }) },
-      { id: "s2", name: "과열", mp: 2, effect: (self) => ({ atkMult: 1.5, defMult: 0.5 }) },
+      { id: "s1", name: "화염 폭발", mp: 3, desc: "방어력 50% 무시, 크리티컬 확률 +20%p (회피 불가)", effect: (self) => ({ atkMult: 1.0, defPierce: 0.5, bonusCrit: 0.2, noDodge: true }) },
+      { id: "s2", name: "과열", mp: 2, desc: "공격력 50% 상승한 강공격", effect: (self) => ({ atkMult: 1.5, defMult: 0.5 }) },
     ],
   },
 };
