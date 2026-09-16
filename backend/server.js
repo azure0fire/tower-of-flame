@@ -11,6 +11,20 @@ app.use(express.json());
 // [!] MVP 단계: 메모리 저장. 실제로는 Firebase Firestore로 교체 예정.
 const sessions = new Map();
 
+const STAT_KEYS = ["atk", "def", "hp", "agi", "luk", "int"];
+
+function computeStats(base, allocated) {
+  const out = {};
+  for (const k of STAT_KEYS) out[k] = base[k] + (allocated?.[k] || 0);
+  return out;
+}
+
+function xpRewardFor(monsterDef) {
+  const s = monsterDef.stats;
+  const total = s.atk + s.def + s.hp + s.agi + s.luk;
+  return Math.max(1, Math.round(total * 0.5));
+}
+
 function makeFighter(name, stats) {
   return {
     name,
@@ -77,15 +91,35 @@ function doAttack(attacker, defender, opts, log) {
 
 // 새 세션(캐릭터 선택) 생성
 app.post("/api/session", (req, res) => {
-  const { charKey, playerName } = req.body;
+  const { charKey, playerName, progress } = req.body;
   const charDef = CHARACTERS[charKey];
   if (!charDef) return res.status(400).json({ error: "invalid charKey" });
 
-  const sessionId = crypto.randomUUID();
-  const player = makeFighter(playerName || charDef.name, charDef.baseStats);
-  sessions.set(sessionId, { charKey, charDef, player, floor: 0, monster: null, monsterDef: null, log: [] });
+  const allocated = progress?.allocated || { atk: 0, def: 0, hp: 0, agi: 0, luk: 0, int: 0 };
+  const level = progress?.level || 1;
+  const xp = progress?.xp || 0;
+  const xpToNext = progress?.xpToNext || level * 20;
+  const unspentPoints = progress?.unspentPoints || 0;
 
-  res.json({ sessionId, player, charName: charDef.name });
+  const sessionId = crypto.randomUUID();
+  const player = makeFighter(playerName || charDef.name, computeStats(charDef.baseStats, allocated));
+  sessions.set(sessionId, {
+    charKey,
+    charDef,
+    player,
+    floor: 0,
+    monster: null,
+    monsterDef: null,
+    log: [],
+    level,
+    xp,
+    xpToNext,
+    unspentPoints,
+    allocated,
+  });
+
+  const skills = charDef.skills.map((s) => ({ id: s.id, name: s.name, mp: s.mp, desc: s.desc }));
+  res.json({ sessionId, player, charName: charDef.name, skills, ...progressState(sessions.get(sessionId)) });
 });
 
 // 탑 진입 (항상 1층부터)
@@ -180,9 +214,50 @@ app.post("/api/session/:id/action", (req, res) => {
 
   let outcome = "ongoing";
   if (player.hp <= 0) outcome = "defeat";
-  else if (monster.hp <= 0) outcome = "victory";
+  else if (monster.hp <= 0) {
+    outcome = "victory";
+    const xpReward = xpRewardFor(session.monsterDef);
+    session.xp += xpReward;
+    log.push(`${xpReward} 경험치를 얻었다.`);
+    while (session.xp >= session.xpToNext) {
+      session.xp -= session.xpToNext;
+      session.level += 1;
+      session.unspentPoints += 2;
+      session.xpToNext = session.level * 20;
+      log.push(`레벨 업! ${session.level}레벨이 되었습니다. (분배 가능 스탯 +2)`);
+    }
+  }
 
   res.json({ ...sessionState(session), outcome });
+});
+
+// 스탯 포인트 분배 (delta: 1 또는 -1)
+app.post("/api/session/:id/allocate", (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session) return res.status(404).json({ error: "session not found" });
+
+  const { stat, delta } = req.body;
+  if (!STAT_KEYS.includes(stat)) return res.status(400).json({ error: "invalid stat" });
+  if (delta !== 1 && delta !== -1) return res.status(400).json({ error: "invalid delta" });
+
+  if (delta === 1) {
+    if (session.unspentPoints <= 0) return res.status(400).json({ error: "남은 스탯 포인트가 없습니다." });
+    session.allocated[stat] = (session.allocated[stat] || 0) + 1;
+    session.unspentPoints -= 1;
+  } else {
+    if ((session.allocated[stat] || 0) <= 0) return res.status(400).json({ error: "되돌릴 포인트가 없습니다." });
+    session.allocated[stat] -= 1;
+    session.unspentPoints += 1;
+  }
+
+  const newStats = computeStats(session.charDef.baseStats, session.allocated);
+  session.player.stats = newStats;
+  session.player.maxHp = newStats.hp;
+  session.player.hp = Math.min(session.player.hp, session.player.maxHp);
+  session.player.maxMp = maxMp(newStats.int);
+  session.player.mp = Math.min(session.player.mp, session.player.maxMp);
+
+  res.json({ player: session.player, ...progressState(session) });
 });
 
 // 승리 후 다음 층으로
@@ -201,13 +276,25 @@ app.post("/api/session/:id/next-floor", (req, res) => {
   res.json(sessionState(session));
 });
 
+function progressState(session) {
+  return {
+    level: session.level,
+    xp: session.xp,
+    xpToNext: session.xpToNext,
+    unspentPoints: session.unspentPoints,
+    allocated: session.allocated,
+  };
+}
+
 function sessionState(session) {
   return {
     floor: session.floor,
     player: session.player,
     monster: session.monster,
     monsterName: session.monsterDef ? session.monsterDef.name : null,
+    monsterZone: session.monsterDef ? session.monsterDef.zone : null,
     log: session.log,
+    ...progressState(session),
   };
 }
 
